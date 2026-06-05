@@ -161,9 +161,42 @@ To validate the RTL architecture before target fabrication, the design was fully
 ### 1. Matrix Peripheral Pin Out & Connectivity
 The display infrastructure consists of four cascaded MAX7219 $8 \times 8$ LED dot matrices configured in a daisy-chain chain array to form the $16 \times 16$ active gaming grid. The serial interface between the FPGA board pins and the peripheral module uses the following wiring layout:
 
+<img width="1071" height="737" alt="MAX7219" src="https://github.com/user-attachments/assets/ca7f16c0-bb51-4213-a8c9-705461763a76" />
+
 * **VCC**: Wired to the FPGA 5V power rail.
 * **GND**: Tied to the common system ground.
 * **DIN (Data In)**: Connected to the `MAX_DIN` output pin. It receives the serialized 64-bit row packets bit-by-bit.
 * **CS/LOAD (Chip Select)**: Connected to the `MAX_CS` latch pin. It pulses high to tell all four matrices to load the shifting registers simultaneously.
 * **CLK (Serial Clock)**: Connected to the `MAX_CLK` pin driven by the 5 kHz internal `slow_clk` clock domain.
 ---
+### 2. Collision Mechanics & Full-Screen Flash
+The boundary collision and self-eating logic were verified using 4 onboard mechanical push-buttons (`KEY[3:0]`). When the tracking system captures a collision event—such as the snake head coordinate meeting a wall boundary ($0$ or $15$) or crossing path coordinates with its own body register file—the FSM immediately switches the game state to `STATE_GAMEOVER`. 
+
+<img width="4018" height="2296" alt="snake1" src="https://github.com/user-attachments/assets/9f0fa0b1-d732-4400-bbd4-902d967670b2" />
+
+<img width="3904" height="1955" alt="collision" src="https://github.com/user-attachments/assets/b490c132-174b-40bb-af61-77acf49b15d7" />
+
+To give the player clear visual feedback, the combinational block automatically overrides the standard pixel coordinates and sends a hardcoded hex command (`8'hFF`) to every row on the grid. This triggers an instantaneous, highly visible **full-screen flash** turning on all 256 LEDs simultaneously.
+
+```verilog
+// Flash all pixels high when the game over state triggers
+if (game_over) begin
+    row_TL = 8'hFF; row_TR = 8'hFF;
+    row_BL = 8'hFF; row_BR = 8'hFF;
+end
+```
+3. Food Dynamics & Poison Hazard Validation
+The gameplay mechanics were tested to ensure the item distribution logic behaves as intended without trapping or locking hazards:
+
+Food: Whenever the snake head coordinates match the target food register coordinates (f_x == h_x and f_y == h_y), the chip instantly increments the snake_len tracking register by 1, calculates the updated score display, and samples the free-running high-speed counter to teleport the next food piece to a random unassigned space.
+
+<img width="3900" height="2014" alt="food" src="https://github.com/user-attachments/assets/acf9c01a-656d-4677-8a28-e8851fdce7f2" />
+
+Poison Obstacles: The dynamic hazard engine was verified to unlock only after the score is higher or equal to 5. The poison block utilizes a dedicated internal timer block to blink continuously, separating it visually from standard food items. If the player consumes the poison, the score tracker safely subtracts 2 length segments from the body register array. If the poison is ignored, it automatically relocates to a new coordinate after 4.5 seconds to keep the game board dynamically shifting.
+
+## FPGA Implementation Operation
+
+
+
+
+
