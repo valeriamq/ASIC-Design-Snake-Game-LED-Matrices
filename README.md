@@ -68,4 +68,102 @@ As the `spi_driver` updates the active row index (`cmd_index`), the core combina
 
 ```verilog
 dynamic_command = { {8'h01, row_BL}, {8'h01, row_BR}, {8'h01, row_TL}, {8'h01, row_TR} };
+```
+## Detailed Module Breakdown
 
+### 1. Root Architecture: `snake_top.v`
+This is the main structural file that connects the entire chip together. Think of it as a central hub or a motherboard. Its first job is to clean up the signals coming from the physical buttons using an internal counter; this prevents mechanical noise (button bouncing) from executing unintended movements. Second, it splits the fast 50 MHz main clock down to a much slower 5 kHz clock domain so the external LED matrices can read the data reliably. Finally, it checks the player's movement direction to make sure the snake cannot instantly reverse into itself (e.g., blocking a left turn if moving right) and converts the binary score into independent digits for the screen.
+
+```verilog
+// Preventing illegal 180-degree directional turns
+always @(posedge CLOCK_50) begin
+    if (!clean_sw0) begin
+        dir <= 2'b00; 
+    end else begin
+        if (!clean_key1 && (dir != 2'b01))      dir <= 2'b00; // Move Right
+        else if (!clean_key0 && (dir != 2'b00)) dir <= 2'b01; // Move Left
+        else if (!clean_key3 && (dir != 2'b11)) dir <= 2'b10; // Move Up
+        else if (!clean_key2 && (dir != 2'b10)) dir <= 2'b11; // Move Down
+    end
+end
+```
+### 2. Game Logic Engine: ` game_core.v`
+This module acts as the "brain" of the chip. It manages the current state of the game (whether you are actively playing or hit a wall) and remembers the exact coordinates of the snake's head and its body segments using small memory registers. Every time a game update happens, it shifts the body coordinates down the line to simulate movement. It also constantly checks if the head coordinates overlap with the walls or the snake's own body to trigger a game-over. To generate targets (food and blinking poison blocks) in unpredictable spots, it tracks a continuously running counter that samples a position whenever an item is eaten.
+
+```verilog
+// Moving the snake body segments downstream sequentially
+if (game_tick) begin
+    for(b_i = 11; b_i > 0; b_i = b_i - 1) begin
+        body_x[b_i] <= body_x[b_i-1];
+        body_y[b_i] <= body_y[b_i-1];
+    end
+    body_x[0] <= h_x;
+    body_y[0] <= h_y;
+    
+    // Updating head position based on current direction vector
+    case(dir)
+        2'b00: h_x <= h_x + 1'b1; 
+        2'b01: h_x <= h_x - 1'b1; 
+        2'b10: h_y <= h_y - 1'b1; 
+        2'b11: h_y <= h_y + 1'b1; 
+    endcase
+end
+```
+### 3. Display Interface Driver: ` spi_driver.v`
+Since the chip has a very limited number of physical output pins, we cannot wire every single LED matrix pixel directly to the hardware. Instead, this module acts as a translator that sends image data using the serial SPI protocol. It takes a large 64-bit parallel block of pixel data from the game core and utilizes a state machine to shift it out bit-by-bit over a single wire (MAX_DIN). It pulses a serial clock line (MAX_CLK) to tell the external screens to accept each bit, and flips a control pin (MAX_CS) to refresh all four LED matrices at the exact same time once a full row update is finished.
+
+```verilog
+// SPI State Machine bit-shifting loop
+1: begin
+    din_reg <= shift_reg[63]; // Place the highest bit on the data wire
+    state   <= 2;
+end
+2: begin
+    state   <= 3;
+end
+3: begin
+    clk_reg <= 1;             // Pulse clock high to lock in the bit
+    state   <= 4;
+end
+4: begin
+    clk_reg   <= 0;           // Pull clock low and shift register left
+    shift_reg <= shift_reg << 1;
+    bit_count <= bit_count - 1;
+    if(bit_count == 1) state <= 5; // Move to latch state if finished
+    else               state <= 1; // Repeat for next bit
+end
+```
+### 4. Score Character Decoder: ` seven_seg.v`
+This is a small, straightforward helper module that handles the math for the score displays. It is completely combinational, meaning it has no memory and does not use a clock signal. It acts like a simple lookup table: you feed it a 4-bit binary number representing the score (from 0 to 9), and it instantly outputs the correct 7-bit patterns required to light up the matching segments on a standard digital display.
+
+```verilog
+// Binary-to-7-Segment illumination lookup table
+always @(*) begin
+    case(num)
+        4'h0: seg = 7'b1000000; // Display 0
+        4'h1: seg = 7'b1111001; // Display 1
+        4'h2: seg = 7'b0100100; // Display 2
+        4'h3: seg = 7'b0110000; // Display 3
+        4'h4: seg = 7'b0011001; // Display 4
+        4'h5: seg = 7'b0010010; // Display 5
+        4'h6: seg = 7'b0000010; // Display 6
+        4'h7: seg = 7'b1111000; // Display 7
+        4'h8: seg = 7'b0000000; // Display 8
+        4'h9: seg = 7'b0010000; // Display 9
+        default: seg = 7'b1111111; // Turn completely off
+    endcase
+end
+```
+## Hardware Verification on FPGA
+
+To validate the RTL architecture before target fabrication, the design was fully synthesized and tested on a physical **Intel/Altera Cyclone II (EP2C20F484C7)** FPGA development platform. The hardware twin setup successfully verified the core processing cycles, peripheral timings, and overall user interactivity in real-time.
+
+### 1. Matrix Peripheral Pin Out & Connectivity
+The display infrastructure consists of four cascaded MAX7219 $8 \times 8$ LED dot matrices configured in a daisy-chain chain array to form the $16 \times 16$ active gaming grid. The serial interface between the FPGA board pins and the peripheral module uses the following wiring layout:
+
+* **VCC**: Wired to the FPGA 5V power rail.
+* **GND**: Tied to the common system ground.
+* **DIN (Data In)**: Connected to the `MAX_DIN` output pin. It receives the serialized 64-bit row packets bit-by-bit.
+* **CS/LOAD (Chip Select)**: Connected to the `MAX_CS` latch pin. It pulses high to tell all four matrices to load the shifting registers simultaneously.
+* **CLK (Serial Clock)**: Connected to the `MAX_CLK` pin driven by the 5 kHz internal `slow_clk` clock domain.
+---
