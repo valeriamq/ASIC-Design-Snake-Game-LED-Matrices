@@ -27,19 +27,18 @@ module game_core(
     reg [3:0] body_x [0:11];
     reg [3:0] body_y [0:11];
 
-    // --- GENERADOR ALEATORIO ---
+    // --- GENERADOR ALEATORIO ULTRA SIMPLIFICADO ---
+    // Incrementa libremente de 0 a 15, evitando sumas condicionales pesadas
     reg [3:0] rand_x;
     reg [3:0] rand_y;
     always @(posedge clk_50) begin
         if (!reset_n) begin
             rand_x <= 4'd4;
-            rand_y <= 4'd4;
+            rand_y <= 4'd7;
         end else begin
-            if (rand_x >= 4'd11) rand_x <= 4'd4;
-            else rand_x <= rand_x + 1'b1;
-            if (rand_x == 4'd11) begin
-                if (rand_y >= 4'd11) rand_y <= 4'd4;
-                else rand_y <= rand_y + 1'b1;
+            rand_x <= rand_x + 1'b1;
+            if (rand_x == 4'd15) begin
+                rand_y <= rand_y + 1'b1;
             end
         end
     end
@@ -67,7 +66,7 @@ module game_core(
         else if ((h_y == 4'd15 && dir == 2'b11) && game_tick) wall_collision = 1'b1;
     end
 
-    // --- RENDERIZADO SECUENCIAL (Evita el cuelgue de Yosys) ---
+    // --- REFRESH DE MATRIZ SECUENCIAL ---
     reg [7:0] row_data_TL [0:7]; 
     reg [7:0] row_data_TR [0:7]; 
     reg [7:0] row_data_BL [0:7]; 
@@ -78,9 +77,10 @@ module game_core(
 
     integer r_i, b_i;
 
+    // BLOQUE PRINCIPAL SECUENCIAL
     always @(posedge clk_50) begin
         if (!reset_n) begin
-            blink_counter <= 0;
+            blink_counter        <= 0;
             current_state        <= STATE_PLAY;
             restart_counter      <= 0;
             tick_counter         <= 0;
@@ -102,7 +102,6 @@ module game_core(
         end else begin
             blink_counter <= blink_counter + 1'b1;
 
-            // Lógica de juego estándar
             case (current_state)
                 STATE_PLAY: begin
                     game_over <= 1'b0;
@@ -134,23 +133,24 @@ module game_core(
                         endcase
                     end
 
+                    // Asignaciones directas sin operaciones lógicas complejas inline
                     if (eaten) begin
-                        f_x <= ({1'b0, rand_x} + 5'd3 > 5'd15) ? 4'd2 : rand_x + 4'd3; 
-                        f_y <= ({1'b0, rand_y} + 5'd5 > 5'd15) ? 4'd3 : rand_y + 4'd5; 
-                        if (snake_len < 5'd13) snake_len <= snake_len + 1'b1; 
+                        f_x <= rand_x; 
+                        f_y <= rand_y; 
+                        if (snake_len < 5'd12) snake_len <= snake_len + 1'b1; 
                     end else if (eaten_poison) begin
                         if (snake_len < 5'd4) current_state <= STATE_GAMEOVER;
                         else begin
                             snake_len <= snake_len - 5'd2; 
-                            p_x <= ({1'b0, rand_y} + 5'd2 > 5'd14) ? 4'd1 : rand_y + 4'd2; 
-                            p_y <= ({1'b0, rand_x} + 5'd1 > 5'd15) ? 4'd1 : rand_x + 4'd1;
+                            p_x <= rand_y; // Cruce directo para aleatoriedad básica
+                            p_y <= rand_x;
                             poison_move_counter <= 0;
                         end
                     end else if (poison_active) begin
                         if (poison_move_counter >= 28'd225_000_000) begin
                             poison_move_counter <= 0;
-                            p_x <= ({1'b0, rand_y} + 5'd3 > 5'd14) ? 4'd2 : rand_y + 4'd3; 
-                            p_y <= ({1'b0, rand_x} + 5'd2 > 5'd15) ? 4'd1 : rand_x + 4'd2;
+                            p_x <= rand_y; 
+                            p_y <= rand_x;
                         end else begin
                             poison_move_counter <= poison_move_counter + 1'b1;
                         end
@@ -162,8 +162,8 @@ module game_core(
                     if (restart_counter == 28'd150_000_000) begin
                         restart_counter <= 0;
                         current_state   <= STATE_PLAY;
-                        h_x <= rand_x; h_y <= rand_y;
-                        body_x[0] <= rand_x - 1'b1; body_y[0] <= rand_y;
+                        h_x <= 4'd5; h_y <= 4'd5;
+                        body_x[0] <= 4'd4; body_y[0] <= 4'd5;
                         for(b_i=1; b_i<12; b_i=b_i+1) begin
                             body_x[b_i] <= 4'd0; body_y[b_i] <= 4'd0;
                         end
@@ -177,20 +177,19 @@ module game_core(
                 end
             endcase
 
-            // --- LLENADO DEL REFRESH DE MATRIZ SECUENCIAL CON RELOJ ---
+            // --- LLENADO DE MATRICES ---
             if (game_over) begin
                 for(r_i=0; r_i<8; r_i=r_i+1) begin
                     row_data_TL[r_i] <= 8'hFF; row_data_TR[r_i] <= 8'hFF;
                     row_data_BL[r_i] <= 8'hFF; row_data_BR[r_i] <= 8'hFF;
                 end
             end else begin
-                // Limpieza inicial por ciclo
                 for(r_i=0; r_i<8; r_i=r_i+1) begin
                     row_data_TL[r_i] <= 8'b0; row_data_TR[r_i] <= 8'b0;
                     row_data_BL[r_i] <= 8'b0; row_data_BR[r_i] <= 8'b0;
                 end
 
-                // Dibujar Cabeza
+                // Cabeza
                 if (h_y < 4'd8) begin
                     if (h_x < 4'd8) row_data_TL[h_y[2:0]][3'd7 - h_x[2:0]] <= 1'b1;
                     else            row_data_TR[h_y[2:0]][3'd7 - h_x[2:0]] <= 1'b1;
@@ -199,7 +198,7 @@ module game_core(
                     else            row_data_BR[h_y[2:0]][3'd7 - h_x[2:0]] <= 1'b1;
                 end
 
-                // Dibujar Cuerpo
+                // Cuerpo
                 for(b_i=0; b_i<12; b_i=b_i+1) begin
                     if (b_i < (snake_len - 5'd1)) begin
                         if (body_y[b_i] < 4'd8) begin
@@ -212,7 +211,7 @@ module game_core(
                     end
                 end
 
-                // Dibujar Comida
+                // Comida
                 if (f_y < 4'd8) begin
                     if (f_x < 4'd8) row_data_TL[f_y[2:0]][3'd7 - f_x[2:0]] <= 1'b1;
                     else            row_data_TR[f_y[2:0]][3'd7 - f_x[2:0]] <= 1'b1;
@@ -221,7 +220,7 @@ module game_core(
                     else            row_data_BR[f_y[2:0]][3'd7 - f_x[2:0]] <= 1'b1;
                 end
 
-                // Dibujar Veneno
+                // Veneno
                 if (poison_active && poison_visible) begin
                     if (p_y < 4'd8) begin
                         if (p_x < 4'd8) row_data_TL[p_y[2:0]][3'd7 - p_x[2:0]] <= 1'b1;
@@ -235,7 +234,7 @@ module game_core(
         end
     end
 
-    // --- MAPEO SPI COMBINACIONAL SENCILLO (Multiplexor limpio) ---
+    // --- MAPEO SPI COMBINACIONAL LIMPIO ---
     always @(*) begin
         case(cmd_index)
             4'd0: dynamic_command = {16'h0900, 16'h0900, 16'h0900, 16'h0900};
