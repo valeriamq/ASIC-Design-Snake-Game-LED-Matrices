@@ -62,7 +62,7 @@ module game_core(
 
     // Índices de bucles dimensionados correctamente para evitar alertas linter
     reg [4:0] m;
-    reg [4:0] k;
+    // reg [4:0] k; // Comentado para eliminar la advertencia UNUSEDSIGNAL
     reg [3:0] r;
     reg [4:0] b;
 
@@ -181,30 +181,30 @@ module game_core(
                         endcase
                     end
 
-                    // Lógica de comida
+                    // Lógica de comida con sumas de 5 bits para evitar CMPCONST
                     if (eaten) begin
-                        f_x <= (rand_x + 4'd3 > 4'd15) ? 4'd2 : rand_x + 4'd3; 
-                        f_y <= (rand_y + 4'd5 > 4'd15) ? 4'd3 : rand_y + 4'd5; 
+                        f_x <= ({1'b0, rand_x} + 5'd3 > 5'd15) ? 4'd2 : rand_x + 4'd3; 
+                        f_y <= ({1'b0, rand_y} + 5'd5 > 5'd15) ? 4'd3 : rand_y + 4'd5; 
                         if (snake_len < 5'd31) snake_len <= snake_len + 1'b1; 
                     end
                     
-                    // Lógica de Muerte por VENENO
+                    // Lógica de Muerte por VENENO con sumas de 5 bits para evitar CMPCONST
                     else if (eaten_poison) begin
                         if (snake_len < 5'd4) begin
                             current_state <= STATE_GAMEOVER;
                         end else begin
                             snake_len <= snake_len - 5'd2; 
-                            p_x <= (rand_y + 4'd2 > 4'd14) ? 4'd1 : rand_y + 4'd2; 
-                            p_y <= (rand_x + 4'd1 > 4'd15) ? 4'd1 : rand_x + 4'd1;
+                            p_x <= ({1'b0, rand_y} + 5'd2 > 5'd14) ? 4'd1 : rand_y + 4'd2; 
+                            p_y <= ({1'b0, rand_x} + 5'd1 > 5'd15) ? 4'd1 : rand_x + 4'd1;
                             poison_move_counter <= 0;
                         end
                     end 
-                    // Movimiento automático del veneno (cada 4.5s)
+                    // Movimiento automático del veneno (cada 4.5s) con sumas de 5 bits para evitar CMPCONST
                     else if (poison_active) begin
                         if (poison_move_counter >= 28'd225_000_000) begin
                             poison_move_counter <= 0;
-                            p_x <= (rand_y + 4'd3 > 4'd14) ? 4'd2 : rand_y + 4'd3; 
-                            p_y <= (rand_x + 4'd2 > 4'd15) ? 4'd1 : rand_x + 4'd2;
+                            p_x <= ({1'b0, rand_y} + 5'd3 > 5'd14) ? 4'd2 : rand_y + 4'd3; 
+                            p_y <= ({1'b0, rand_x} + 5'd2 > 5'd15) ? 4'd1 : rand_x + 4'd2;
                         end else begin
                             poison_move_counter <= poison_move_counter + 1'b1;
                         end
@@ -269,10 +269,9 @@ module game_core(
     end
     wire poison_visible = blink_counter[22];
 
-    // Índices auxiliares de 3 bits para evitar truncamientos en la selección de bits de matrices [7:0]
+    // Índices auxiliares corregidos a 3 bits para evitar WIDTHTRUNC
     wire [2:0] idx_TL = 3'd7 - h_x[2:0];
-    wire [2:0] idx_TR = 3'd7 - h_x[2:0]; // 15 - h_x es equivalente cuando h_x >= 8
-    wire [2:0] idx_BL = 3'd7 - r[2:0];
+    wire [2:0] idx_TR = 3'd7 - h_x[2:0]; 
 
     always @(*) begin
         if (game_over) begin
@@ -296,49 +295,49 @@ module game_core(
             row_data_TL[7] = 8'b0; row_data_TR[7] = 8'b0; row_data_BL[7] = 8'b0; row_data_BR[7] = 8'b0;
 
             for(r = 4'd0; r < 4'd8; r = r + 4'd1) begin
-                // Cabeza
-                if (h_y == {4'b0, r}) begin 
-                    if (h_x < 4'd8) row_data_TL[r][idx_TL] = 1'b1; 
-                    else            row_data_TR[r][idx_TR] = 1'b1;
+                // Cabeza (Comparaciones expandidas a 4 bits para evitar WIDTHEXPAND)
+                if (h_y == r) begin 
+                    if (h_x < 4'd8) row_data_TL[r[2:0]][idx_TL] = 1'b1; 
+                    else            row_data_TR[r[2:0]][idx_TR] = 1'b1;
                 end
-                if (h_y == ({4'b0, r} + 4'd8)) begin 
-                    if (h_x < 4'd8) row_data_BL[idx_BL][h_x[2:0]] = 1'b1; 
-                    else            row_data_BR[r][idx_TR] = 1'b1;
+                if (h_y == (r + 4'd8)) begin 
+                    if (h_x < 4'd8) row_data_BL[r[2:0]][idx_TL] = 1'b1; 
+                    else            row_data_BR[r[2:0]][idx_TR] = 1'b1;
                 end
                 
                 // Cuerpo
                 for(b = 5'd0; b < 5'd30; b = b + 5'd1) begin
                     if (b < (snake_len - 5'd1)) begin 
-                        if (body_y[b] == {4'b0, r}) begin
-                            if (body_x[b] < 4'd8) row_data_TL[r][3'd7 - body_x[b][2:0]] = 1'b1; 
-                            else                  row_data_TR[r][3'd7 - body_x[b][2:0]] = 1'b1;
+                        if (body_y[b] == r) begin
+                            if (body_x[b] < 4'd8) row_data_TL[r[2:0]][3'd7 - body_x[b][2:0]] = 1'b1; 
+                            else                  row_data_TR[r[2:0]][3'd7 - body_x[b][2:0]] = 1'b1;
                         end
-                        if (body_y[b] == ({4'b0, r} + 4'd8)) begin
-                            if (body_x[b] < 4'd8) row_data_BL[idx_BL][body_x[b][2:0]] = 1'b1; 
-                            else                  row_data_BR[r][3'd7 - body_x[b][2:0]] = 1'b1;
+                        if (body_y[b] == (r + 4'd8)) begin
+                            if (body_x[b] < 4'd8) row_data_BL[r[2:0]][3'd7 - body_x[b][2:0]] = 1'b1; 
+                            else                  row_data_BR[r[2:0]][3'd7 - body_x[b][2:0]] = 1'b1;
                         end
                     end
                 end
                 
                 // Comida Normal
-                if (f_y == {4'b0, r}) begin
-                    if (f_x < 4'd8) row_data_TL[r][3'd7 - f_x[2:0]] = 1'b1; 
-                    else            row_data_TR[r][3'd7 - f_x[2:0]] = 1'b1;
+                if (f_y == r) begin
+                    if (f_x < 4'd8) row_data_TL[r[2:0]][3'd7 - f_x[2:0]] = 1'b1; 
+                    else            row_data_TR[r[2:0]][3'd7 - f_x[2:0]] = 1'b1;
                 end
-                if (f_y == ({4'b0, r} + 4'd8)) begin
-                    if (f_x < 4'd8) row_data_BL[idx_BL][f_x[2:0]] = 1'b1; 
-                    else            row_data_BR[r][3'd7 - f_x[2:0]] = 1'b1;
+                if (f_y == (r + 4'd8)) begin
+                    if (f_x < 4'd8) row_data_BL[r[2:0]][3'd7 - f_x[2:0]] = 1'b1; 
+                    else            row_data_BR[r[2:0]][3'd7 - f_x[2:0]] = 1'b1;
                 end
 
                 // Veneno (Titilando)
                 if (poison_active && poison_visible) begin
-                    if (p_y == {4'b0, r}) begin
-                        if (p_x < 4'd8) row_data_TL[r][3'd7 - p_x[2:0]] = 1'b1; 
-                        else            row_data_TR[r][3'd7 - p_x[2:0]] = 1'b1;
+                    if (p_y == r) begin
+                        if (p_x < 4'd8) row_data_TL[r[2:0]][3'd7 - p_x[2:0]] = 1'b1; 
+                        else            row_data_TR[r[2:0]][3'd7 - p_x[2:0]] = 1'b1;
                     end
-                    if (p_y == ({4'b0, r} + 4'd8)) begin
-                        if (p_x < 4'd8) row_data_BL[idx_BL][p_x[2:0]] = 1'b1; 
-                        else            row_data_BR[r][3'd7 - p_x[2:0]] = 1'b1;
+                    if (p_y == (r + 4'd8)) begin
+                        if (p_x < 4'd8) row_data_BL[r[2:0]][3'd7 - p_x[2:0]] = 1'b1; 
+                        else            row_data_BR[r[2:0]][3'd7 - p_x[2:0]] = 1'b1;
                     end
                 end
             end
