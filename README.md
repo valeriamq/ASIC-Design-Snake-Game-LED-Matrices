@@ -198,6 +198,20 @@ Poison Obstacles: The dynamic hazard engine was verified to unlock only after th
 
 https://github.com/user-attachments/assets/b47eae97-ec65-4708-bf28-ba7017474251
 
+---
+
+## Silicon Synthesis & OpenLane ASIC Flow (Tiny Tapeout)
+
+The production-ready architecture was hardwired and validated using the official **Tiny Tapeout Verilog Template** (`tt-sky130-verilog-template`). This structural framework standardizes the physical design constraints required to multiplex multiple projects onto a single Multi-Project Wafer (MPW) shuttle.
+
+Through the template's automated GitHub Actions CI/CD pipeline, the RTL design underwent a complete digital synthesis and layout hardening flow using the **OpenLane** compiler and the **SkyWater 130 nm Open PDK** standard cell library:
+
+1. **Logical Synthesis (`Yosys`)**: The behavioral Verilog code was successfully translated into a structurally mapped netlist of SkyWater standard logic cells.
+2. **Static Timing Analysis (`STA`)**: Main clock routing was analyzed under a 50 MHz constraint, confirming zero setup/hold slack violations and ensuring clean timing closure across all internal registers.
+3. **Automated Verification**: The framework executed automated Design Rule Checking (**DRC**) and Layout vs. Schematic (**LVS**) testing to guarantee that the geometric silicon masks perfectly reflect the synchronous hardware logic.
+4. **GDSII Generation**: The hardening flow concluded with the successful extraction of the **GDSII** file (the final geometric blueprint for physical lithography manufacture) and the automated generation of the workspace test documentation (*test docs*).
+
+<img width="2772" height="1659" alt="finalDesign" src="https://github.com/user-attachments/assets/fc9d8c84-a598-441d-ae0e-f15691597e89" />
 
 
 
