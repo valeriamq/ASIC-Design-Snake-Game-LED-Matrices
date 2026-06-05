@@ -1,42 +1,71 @@
 ![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg) ![](../../workflows/fpga/badge.svg)
 
-# Tiny Tapeout Verilog Project Template
+## ASIC-Design-Snake-Game-LED-Matrices
 
-- [Read the documentation for project](docs/info.md)
+This repository contains the synchronous, hardware-only Register-Transfer Level (RTL) architecture in Verilog HDL for a special-purpose processor designed to execute the game "Snake". The design implements state routines, collision matrices, and peripheral drivers.
+---
 
-## What is Tiny Tapeout?
+## System Architecture & Block Topography
 
-Tiny Tapeout is an educational project that aims to make it easier and cheaper than ever to get your digital and analog designs manufactured on a real chip.
+* **`tt_um_example`**: The primary physical pad frame wrapper required by the Tiny Tapeout multi-project wafer (MPW) multiplexer. It maps external pad lines to the internal chip ports.
+* **`snake_top`**: The structural root module. It handles high-speed clock division, instantiates the input conditioning synchronizers, and houses the combinational binary-to-BCD score conversion logic.
+* **`game_core`**: The central execution engine. It contains the master Finite State Machine (FSM), the sequential register shift matrix for the body tracking, coordinate generation logic, and the quadrant-based spatial framebuffer mapper.
+* **`spi_driver`**: A serialization engine that translates the parallel commands from the core framebuffer into a single-bit synchronous SPI data stream.
+* **`seven_seg`**: A dual-instance combinational lookup-table decoder that maps the BCD score to external 7-segment character displays.
 
-To learn more and get started, visit https://tinytapeout.com.
+---
 
-## Set up your Verilog project
+## Physical Pad Frame Interface (Pinout Mapping)
 
-1. Add your Verilog files to the `src` folder.
-2. Edit the [info.yaml](info.yaml) and update information about your project, paying special attention to the `source_files` and `top_module` properties. If you are upgrading an existing Tiny Tapeout project, check out our [online info.yaml migration tool](https://tinytapeout.github.io/tt-yaml-upgrade-tool/).
-3. Edit [docs/info.md](docs/info.md) and add a description of your project.
-4. Adapt the testbench to your design. See [test/README.md](test/README.md) for more information.
+### Primary Inputs (`ui_in`) & Control
+| Physical Pin | Signal Name | Type | Description |
+| :--- | :--- | :---: | :--- |
+| `clk` | `CLOCK_50` | Input | Master System Clock (50 MHz) |
+| `rst_n` | `reset_n` | Input | Global Asynchronous Reset (Active-Low) |
+| `ui_in[0]` | `KEY[0]` | Input | Move Vector: Left (Active-Low, Debounced) |
+| `ui_in[1]` | `KEY[1]` | Input | Move Vector: Right (Active-Low, Debounced) |
+| `ui_in[2]` | `KEY[2]` | Input | Move Vector: Down (Active-Low, Debounced) |
+| `ui_in[3]` | `KEY[3]` | Input | Move Vector: Up (Active-Low, Debounced) |
 
-The GitHub action will automatically build the ASIC files using [LibreLane](https://www.zerotoasiccourse.com/terminology/librelane/).
+### Primary Outputs (`uo_out`) & Serial Peripherals
+| Physical Pin | Signal Name | Type | Description |
+| :--- | :--- | :---: | :--- |
+| `uo_out[0]` | `MAX_DIN` | Output | Serial Peripheral Interface (SPI) Data Line |
+| `uo_out[1]` | `MAX_CLK` | Output | Serial Peripheral Interface (SPI) Clock Domain (`slow_clk`) |
+| `uo_out[2]` | `MAX_CS` | Output | Serial Peripheral Interface (SPI) Latch / Chip Select |
+| `uo_out[3]` | `HEX0[0]` | Output | Seven-Segment Segment A (Units Digit) |
+| `uo_out[4]` | `HEX0[1]` | Output | Seven-Segment Segment B (Units Digit) |
+| `uo_out[5]` | `HEX0[2]` | Output | Seven-Segment Segment C (Units Digit) |
+| `uo_out[6]` | `HEX0[3]` | Output | Seven-Segment Segment D (Units Digit) |
+| `uo_out[7]` | `HEX0[4]` | Output | Seven-Segment Segment E (Units Digit) |
 
-## Enable GitHub actions to build the results page
+### Bidirectional Buses (`uio_out`) Mapped as Outputs
+| Physical Pin | Signal Name | Type | Description |
+| :--- | :--- | :---: | :--- |
+| `uio_out[0]` | `HEX1[0]` | Output | Seven-Segment Segment A (Tens Digit) |
+| `uio_out[1]` | `HEX1[1]` | Output | Seven-Segment Segment B (Tens Digit) |
+| `uio_out[2]` | `HEX1[2]` | Output | Seven-Segment Segment C (Tens Digit) |
+| `uio_out[3]` | `HEX1[3]` | Output | Seven-Segment Segment D (Tens Digit) |
+| `uio_out[4]` | `HEX1[4]` | Output | Seven-Segment Segment E (Tens Digit) |
+| `uio_out[5]` | `HEX1[5]` | Output | Seven-Segment Segment F (Tens Digit) |
+| `uio_out[6]` | `HEX1[6]` | Output | Seven-Segment Segment G (Tens Digit) |
 
-- [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
+---
 
-## Resources
+## Deep-Dive Implementation Details
 
-- [FAQ](https://tinytapeout.com/faq/)
-- [Digital design lessons](https://tinytapeout.com/digital_design/)
-- [Learn how semiconductors work](https://tinytapeout.com/siliwiz/)
-- [Join the community](https://tinytapeout.com/discord)
-- [Build your design locally](https://www.tinytapeout.com/guides/local-hardening/)
+### 1. Finite State Machine & Memory Arrays (`game_core.v`)
+The core processing is handled by a single-bit dual-state master synchronous FSM containing `STATE_PLAY (1'b0)` and `STATE_GAMEOVER (1'b1)`.
 
-## What next?
+* **Shift Register Body Tracking**: The physical structure of the snake is allocated as a static register file consisting of 12 stages of 4-bit coordinate vectors for both axes (`body_x` and `body_y`). Upon the assertion of a `game_tick`, an arithmetic downstream shift operation is executed: $\text{body}[i] \leftarrow \text{body}[i-1]$, and the new head coordinates (`h_x`, `h_y`) are appended based on the direction matrix.
+* **Combinational Hazard Evaluation**: Collision metrics operate purely in the combinational space. Self-collision is verified by continuous loop evaluation matching head coordinates against active index segments. Boundary wall parameters are processed by tracking look-ahead limits relative to the 2-bit direction token.
+* **Dynamic Hazards & Blinking Logic**: When the score reaches $\ge 5$, a toxic obstacle (`p_x`, `p_y`) is introduced into the memory registers. Bit 22 of a free-running register (`blink_counter`) is mapped to modulate the visibility bitstream of the obstacle to implement hardware-level parpadeo. A 28-bit internal counter resets and relocates the poison coordinates automatically every 4.5 seconds if left unconsumed.
 
-- [Submit your design to the next shuttle](https://app.tinytapeout.com/).
-- Edit [this README](README.md) and explain your design, how it works, and how to test it.
-- Share your project on your social network of choice:
-  - LinkedIn [#tinytapeout](https://www.linkedin.com/search/results/content/?keywords=%23tinytapeout) [@TinyTapeout](https://www.linkedin.com/company/100708654/)
-  - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
-  - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
-  - Bluesky [@tinytapeout.com](https://bsky.app/profile/tinytapeout.com)
+### 2. Quadrant Multiplexing & Bus Serialization (`spi_driver.v`)
+To display a continuous $16 \times 16$ board across a $2 \times 2$ grid of $8 \times 8$ matrices, the system utilizes quadrant-based structural multiplexing.
+
+As the `spi_driver` updates the active row index (`cmd_index`), the core combinational blocks extract data from the spatial coordinates and assemble four independent 8-bit row words (`row_TL`, `row_TR`, `row_BL`, `row_BR`). Because the physical MAX7219 devices are wired in series, these four segments are packed into a single 64-bit multi-matrix word:
+
+```verilog
+dynamic_command = { {8'h01, row_BL}, {8'h01, row_BR}, {8'h01, row_TL}, {8'h01, row_TR} };
+
