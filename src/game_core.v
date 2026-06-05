@@ -18,16 +18,13 @@ module game_core(
     reg [27:0] poison_move_counter;
     reg poison_active;
 
-    // Tu mapa original de 16x16 intacto
     reg [3:0] h_x, h_y; 
     reg [3:0] f_x, f_y; 
     reg [3:0] p_x, p_y; 
     
-    // Tu largo original de serpiente (12 bloques) intacto
     reg [3:0] body_x [0:11];
     reg [3:0] body_y [0:11];
 
-    // --- GENERADOR ALEATORIO ULTRA COMPACTO ---
     reg [3:0] rand_x;
     reg [3:0] rand_y;
     always @(posedge clk_50) begin
@@ -40,7 +37,6 @@ module game_core(
         end
     end
 
-    // Colisiones
     reg self_collision;
     reg wall_collision;
     wire eaten = (h_x == f_x) && (h_y == f_y);
@@ -168,8 +164,6 @@ module game_core(
         end
     end
 
-    // --- RENDERIZADO COMBINACIONAL AL VUELO ---
-    // Esto elimina los miles de registros de pantalla y deshace el nudo de cables.
     reg [7:0] row_TL, row_TR, row_BL, row_BR;
     wire [3:0] y_top = cmd_index - 4'd5;
     wire [3:0] y_bot = cmd_index - 4'd5 + 4'd8;
@@ -184,7 +178,6 @@ module game_core(
             row_BL = 8'hFF; row_BR = 8'hFF;
         end else if (cmd_index >= 4'd5 && cmd_index <= 4'd12) begin
             
-            // Columnas de la izquierda (0 a 7)
             for (col = 0; col < 8; col = col + 1) begin
                 // Top Left
                 if (h_x == col[3:0] && h_y == y_top) row_TL[3'd7 - col[2:0]] = 1'b1;
@@ -196,7 +189,6 @@ module game_core(
                     end
                 end
 
-                // Bottom Left
                 if (h_x == col[3:0] && h_y == y_bot) row_BL[3'd7 - col[2:0]] = 1'b1;
                 if (f_x == col[3:0] && f_y == y_bot) row_BL[3'd7 - col[2:0]] = 1'b1;
                 if (poison_active && poison_visible && p_x == col[3:0] && p_y == y_bot) row_BL[3'd7 - col[2:0]] = 1'b1;
@@ -207,9 +199,7 @@ module game_core(
                 end
             end
 
-            // Columnas de la derecha (8 a 15)
             for (col = 8; col < 16; col = col + 1) begin
-                // Top Right
                 if (h_x == col[3:0] && h_y == y_top) row_TR[3'd7 - col[2:0]] = 1'b1;
                 if (f_x == col[3:0] && f_y == y_top) row_TR[3'd7 - col[2:0]] = 1'b1;
                 if (poison_active && poison_visible && p_x == col[3:0] && p_y == y_top) row_TR[3'd7 - col[2:0]] = 1'b1;
@@ -219,7 +209,6 @@ module game_core(
                     end
                 end
 
-                // Bottom Right
                 if (h_x == col[3:0] && h_y == y_bot) row_BR[3'd7 - col[2:0]] = 1'b1;
                 if (f_x == col[3:0] && f_y == y_bot) row_BR[3'd7 - col[2:0]] = 1'b1;
                 if (poison_active && poison_visible && p_x == col[3:0] && p_y == y_bot) row_BR[3'd7 - col[2:0]] = 1'b1;
@@ -232,7 +221,6 @@ module game_core(
         end
     end
 
-    // --- MAPEO SPI COMBINACIONAL ---
     always @(*) begin
         case(cmd_index)
             4'd0: dynamic_command = {16'h0900, 16'h0900, 16'h0900, 16'h0900};
