@@ -103,15 +103,15 @@ module snake_top(
     always @(*) begin
         if (puntos >= 5'd30) begin
             decenas  = 4'd3;
-            unidades = puntos[3:0] - 4'd14; // puntos - 30 estructurado de forma segura para 4 bits
+            unidades = puntos[3:0] - 4'd14;
         end 
         else if (puntos >= 5'd20) begin
             decenas  = 4'd2;
-            unidades = puntos[3:0] - 4'd4;  // puntos - 20 estructurado de forma segura para 4 bits
+            unidades = puntos[3:0] - 4'd4;
         end 
         else if (puntos >= 5'd10) begin
             decenas  = 4'd1;
-            unidades = puntos[3:0] - 4'd10; // puntos - 10
+            unidades = puntos[3:0] - 4'd10;
         end 
         else begin
             decenas  = 4'd0;
