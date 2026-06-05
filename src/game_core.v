@@ -23,23 +23,20 @@ module game_core(
     reg [3:0] f_x, f_y; 
     reg [3:0] p_x, p_y; 
     
-    // Cuerpo de la serpiente
-    reg [3:0] body_x [0:11];
-    reg [3:0] body_y [0:11];
+    // Cuerpo de la serpiente (Optimizado a 8 bloques para Tiny Tapeout)
+    reg [3:0] body_x [0:7];
+    reg [3:0] body_y [0:7];
 
-    // --- GENERADOR ALEATORIO ULTRA SIMPLIFICADO ---
-    // Incrementa libremente de 0 a 15, evitando sumas condicionales pesadas
+    // --- GENERADOR ALEATORIO ULTRA SIMPLE ---
     reg [3:0] rand_x;
     reg [3:0] rand_y;
     always @(posedge clk_50) begin
         if (!reset_n) begin
-            rand_x <= 4'd4;
-            rand_y <= 4'd7;
+            rand_x <= 4'd2;
+            rand_y <= 4'd5;
         end else begin
             rand_x <= rand_x + 1'b1;
-            if (rand_x == 4'd15) begin
-                rand_y <= rand_y + 1'b1;
-            end
+            if (rand_x == 4'd15) rand_y <= rand_y + 1'b1;
         end
     end
 
@@ -53,7 +50,7 @@ module game_core(
     integer m;
     always @(*) begin
         self_collision = 1'b0;
-        for (m = 0; m < 12; m = m + 1) begin
+        for (m = 0; m < 8; m = m + 1) begin
             if (m < (snake_len - 5'd1)) begin
                 if (h_x == body_x[m] && h_y == body_y[m]) self_collision = 1'b1;
             end
@@ -66,16 +63,17 @@ module game_core(
         else if ((h_y == 4'd15 && dir == 2'b11) && game_tick) wall_collision = 1'b1;
     end
 
-    // --- REFRESH DE MATRIZ SECUENCIAL ---
-    reg [7:0] row_data_TL [0:7]; 
-    reg [7:0] row_data_TR [0:7]; 
-    reg [7:0] row_data_BL [0:7]; 
-    reg [7:0] row_data_BR [0:7]; 
+    // --- MATRICES PLANAS (Registros directos en lugar de arrays de memoria) ---
+    // Esto elimina los operadores $shl dinámicos que cuelgan a Yosys
+    reg [63:0] flat_TL;
+    reg [63:0] flat_TR;
+    reg [63:0] flat_BL;
+    reg [63:0] flat_BR;
     
     reg [22:0] blink_counter;
     wire poison_visible = blink_counter[22];
 
-    integer r_i, b_i;
+    integer b_i;
 
     // BLOQUE PRINCIPAL SECUENCIAL
     always @(posedge clk_50) begin
@@ -89,15 +87,16 @@ module game_core(
             game_tick            <= 0;
             game_over            <= 1'b0;
             
-            h_x       <= 4'd5;  h_y       <= 4'd5;
-            body_x[0] <= 4'd4;  body_y[0] <= 4'd5;
-            for(b_i=1; b_i<12; b_i=b_i+1) begin
+            h_x       <= 4'd3;  h_y       <= 4'd3;
+            body_x[0] <= 4'd2;  body_y[0] <= 4'd3;
+            for(b_i=1; b_i<8; b_i=b_i+1) begin
                 body_x[b_i] <= 4'd0; body_y[b_i] <= 4'd0;
             end
 
-            f_x <= 4'd12; f_y <= 4'd4; 
+            f_x <= 4'd10; f_y <= 4'd4; 
             p_x <= 4'd2;  p_y <= 4'd12;
             snake_len <= 5'd2;
+            flat_TL <= 64'b0; flat_TR <= 64'b0; flat_BL <= 64'b0; flat_BR <= 64'b0;
 
         end else begin
             blink_counter <= blink_counter + 1'b1;
@@ -105,7 +104,7 @@ module game_core(
             case (current_state)
                 STATE_PLAY: begin
                     game_over <= 1'b0;
-                    if (snake_len >= 5'd5) poison_active <= 1'b1;
+                    if (snake_len >= 5'd4) poison_active <= 1'b1;
 
                     if (tick_counter == 24'd12_500_000) begin 
                         tick_counter <= 0;
@@ -118,7 +117,7 @@ module game_core(
                     if (collision_detected) begin
                         current_state <= STATE_GAMEOVER;
                     end else if (game_tick) begin
-                        for(b_i=11; b_i>0; b_i=b_i-1) begin
+                        for(b_i=7; b_i>0; b_i=b_i-1) begin
                             body_x[b_i] <= body_x[b_i-1];
                             body_y[b_i] <= body_y[b_i-1];
                         end
@@ -133,16 +132,15 @@ module game_core(
                         endcase
                     end
 
-                    // Asignaciones directas sin operaciones lógicas complejas inline
                     if (eaten) begin
                         f_x <= rand_x; 
                         f_y <= rand_y; 
-                        if (snake_len < 5'd12) snake_len <= snake_len + 1'b1; 
+                        if (snake_len < 5'd8) snake_len <= snake_len + 1'b1; 
                     end else if (eaten_poison) begin
                         if (snake_len < 5'd4) current_state <= STATE_GAMEOVER;
                         else begin
                             snake_len <= snake_len - 5'd2; 
-                            p_x <= rand_y; // Cruce directo para aleatoriedad básica
+                            p_x <= rand_y; 
                             p_y <= rand_x;
                             poison_move_counter <= 0;
                         end
@@ -162,12 +160,12 @@ module game_core(
                     if (restart_counter == 28'd150_000_000) begin
                         restart_counter <= 0;
                         current_state   <= STATE_PLAY;
-                        h_x <= 4'd5; h_y <= 4'd5;
-                        body_x[0] <= 4'd4; body_y[0] <= 4'd5;
-                        for(b_i=1; b_i<12; b_i=b_i+1) begin
+                        h_x <= 4'd3; h_y <= 4'd3;
+                        body_x[0] <= 4'd2; body_y[0] <= 4'd3;
+                        for(b_i=1; b_i<8; b_i=b_i+1) begin
                             body_x[b_i] <= 4'd0; body_y[b_i] <= 4'd0;
                         end
-                        f_x <= 4'd12; f_y <= 4'd4;
+                        f_x <= 4'd10; f_y <= 4'd4;
                         p_x <= 4'd2;  p_y <= 4'd12;
                         snake_len <= 5'd2;
                         poison_active <= 1'b0;
@@ -177,64 +175,60 @@ module game_core(
                 end
             endcase
 
-            // --- LLENADO DE MATRICES ---
+            // --- RENDERIZADO DIRECTO A REGISTROS PLANOS ---
             if (game_over) begin
-                for(r_i=0; r_i<8; r_i=r_i+1) begin
-                    row_data_TL[r_i] <= 8'hFF; row_data_TR[r_i] <= 8'hFF;
-                    row_data_BL[r_i] <= 8'hFF; row_data_BR[r_i] <= 8'hFF;
-                end
+                flat_TL <= {64{1'b1}}; flat_TR <= {64{1'b1}};
+                flat_BL <= {64{1'b1}}; flat_BR <= {64{1'b1}};
             end else begin
-                for(r_i=0; r_i<8; r_i=r_i+1) begin
-                    row_data_TL[r_i] <= 8'b0; row_data_TR[r_i] <= 8'b0;
-                    row_data_BL[r_i] <= 8'b0; row_data_BR[r_i] <= 8'b0;
-                end
+                flat_TL <= 64'b0; flat_TR <= 64'b0;
+                flat_BL <= 64'b0; flat_BR <= 64'b0;
 
-                // Cabeza
+                // Dibujar Cabeza
                 if (h_y < 4'd8) begin
-                    if (h_x < 4'd8) row_data_TL[h_y[2:0]][3'd7 - h_x[2:0]] <= 1'b1;
-                    else            row_data_TR[h_y[2:0]][3'd7 - h_x[2:0]] <= 1'b1;
+                    if (h_x < 4'd8) flat_TL[{h_y[2:0], 3'd7 - h_x[2:0]}] <= 1'b1;
+                    else            flat_TR[{h_y[2:0], 3'd7 - h_x[2:0]}] <= 1'b1;
                 end else begin
-                    if (h_x < 4'd8) row_data_BL[h_y[2:0]][3'd7 - h_x[2:0]] <= 1'b1;
-                    else            row_data_BR[h_y[2:0]][3'd7 - h_x[2:0]] <= 1'b1;
+                    if (h_x < 4'd8) flat_BL[{h_y[2:0], 3'd7 - h_x[2:0]}] <= 1'b1;
+                    else            flat_BR[{h_y[2:0], 3'd7 - h_x[2:0]}] <= 1'b1;
                 end
 
-                // Cuerpo
-                for(b_i=0; b_i<12; b_i=b_i+1) begin
+                // Dibujar Cuerpo
+                for(b_i=0; b_i<8; b_i=b_i+1) begin
                     if (b_i < (snake_len - 5'd1)) begin
                         if (body_y[b_i] < 4'd8) begin
-                            if (body_x[b_i] < 4'd8) row_data_TL[body_y[b_i][2:0]][3'd7 - body_x[b_i][2:0]] <= 1'b1;
-                            else                    row_data_TR[body_y[b_i][2:0]][3'd7 - body_x[b_i][2:0]] <= 1'b1;
+                            if (body_x[b_i] < 4'd8) flat_TL[{body_y[b_i][2:0], 3'd7 - body_x[b_i][2:0]}] <= 1'b1;
+                            else                    flat_TR[{body_y[b_i][2:0], 3'd7 - body_x[b_i][2:0]}] <= 1'b1;
                         end else begin
-                            if (body_x[b_i] < 4'd8) row_data_BL[body_y[b_i][2:0]][3'd7 - body_x[b_i][2:0]] <= 1'b1;
-                            else                    row_data_BR[body_y[b_i][2:0]][3'd7 - body_x[b_i][2:0]] <= 1'b1;
+                            if (body_x[b_i] < 4'd8) flat_BL[{body_y[b_i][2:0], 3'd7 - body_x[b_i][2:0]}] <= 1'b1;
+                            else                    flat_BR[{body_y[b_i][2:0], 3'd7 - body_x[b_i][2:0]}] <= 1'b1;
                         end
                     end
                 end
 
-                // Comida
+                // Dibujar Comida
                 if (f_y < 4'd8) begin
-                    if (f_x < 4'd8) row_data_TL[f_y[2:0]][3'd7 - f_x[2:0]] <= 1'b1;
-                    else            row_data_TR[f_y[2:0]][3'd7 - f_x[2:0]] <= 1'b1;
+                    if (f_x < 4'd8) flat_TL[{f_y[2:0], 3'd7 - f_x[2:0]}] <= 1'b1;
+                    else            flat_TR[{f_y[2:0], 3'd7 - f_x[2:0]}] <= 1'b1;
                 end else begin
-                    if (f_x < 4'd8) row_data_BL[f_y[2:0]][3'd7 - f_x[2:0]] <= 1'b1;
-                    else            row_data_BR[f_y[2:0]][3'd7 - f_x[2:0]] <= 1'b1;
+                    if (f_x < 4'd8) flat_BL[{f_y[2:0], 3'd7 - f_x[2:0]}] <= 1'b1;
+                    else            flat_BR[{f_y[2:0], 3'd7 - f_x[2:0]}] <= 1'b1;
                 end
 
-                // Veneno
+                // Dibujar Veneno
                 if (poison_active && poison_visible) begin
                     if (p_y < 4'd8) begin
-                        if (p_x < 4'd8) row_data_TL[p_y[2:0]][3'd7 - p_x[2:0]] <= 1'b1;
-                        else            row_data_TR[p_y[2:0]][3'd7 - p_x[2:0]] <= 1'b1;
+                        if (p_x < 4'd8) flat_TL[{p_y[2:0], 3'd7 - p_x[2:0]}] <= 1'b1;
+                        else            flat_TR[{p_y[2:0], 3'd7 - p_x[2:0]}] <= 1'b1;
                     end else begin
-                        if (p_x < 4'd8) row_data_BL[p_y[2:0]][3'd7 - p_x[2:0]] <= 1'b1;
-                        else            row_data_BR[p_y[2:0]][3'd7 - p_x[2:0]] <= 1'b1;
+                        if (p_x < 4'd8) flat_BL[{p_y[2:0], 3'd7 - p_x[2:0]}] <= 1'b1;
+                        else            flat_BR[{p_y[2:0], 3'd7 - p_x[2:0]}] <= 1'b1;
                     end
                 end
             end
         end
     end
 
-    // --- MAPEO SPI COMBINACIONAL LIMPIO ---
+    // --- MAPEO SPI COMBINACIONAL TOTALMENTE PLANO (Ultra rápido) ---
     always @(*) begin
         case(cmd_index)
             4'd0: dynamic_command = {16'h0900, 16'h0900, 16'h0900, 16'h0900};
@@ -243,14 +237,15 @@ module game_core(
             4'd3: dynamic_command = {16'h0C01, 16'h0C01, 16'h0C01, 16'h0C01};
             4'h4: dynamic_command = {16'h0F00, 16'h0F00, 16'h0F00, 16'h0F00};
             
-            4'd5:  dynamic_command = { {8'h01, row_data_BL[0]}, {8'h01, row_data_BR[0]}, {8'h01, row_data_TL[0]}, {8'h01, row_data_TR[0]} };
-            4'd6:  dynamic_command = { {8'h02, row_data_BL[1]}, {8'h02, row_data_BR[1]}, {8'h02, row_data_TL[1]}, {8'h02, row_data_TR[1]} };
-            4'd7:  dynamic_command = { {8'h03, row_data_BL[2]}, {8'h03, row_data_BR[2]}, {8'h03, row_data_TL[2]}, {8'h03, row_data_TR[2]} };
-            4'd8:  dynamic_command = { {8'h04, row_data_BL[3]}, {8'h04, row_data_BR[3]}, {8'h04, row_data_TL[3]}, {8'h04, row_data_TR[3]} };
-            4'd9:  dynamic_command = { {8'h05, row_data_BL[4]}, {8'h05, row_data_BR[4]}, {8'h05, row_data_TL[4]}, {8'h05, row_data_TR[4]} };
-            4'd10: dynamic_command = { {8'h06, row_data_BL[5]}, {8'h06, row_data_BR[5]}, {8'h06, row_data_TL[5]}, {8'h06, row_data_TR[5]} };
-            4'd11: dynamic_command = { {8'h07, row_data_BL[6]}, {8'h07, row_data_BR[6]}, {8'h07, row_data_TL[6]}, {8'h07, row_data_TR[6]} };
-            4'd12: dynamic_command = { {8'h08, row_data_BL[7]}, {8'h08, row_data_BR[7]}, {8'h08, row_data_TL[7]}, {8'h08, row_data_TR[7]} };
+            // Accedemos a rebanadas de bits fijas, lo que elimina la optimización de recursos pesados
+            4'd5:  dynamic_command = { {8'h01, flat_BL[7:0]},   {8'h01, flat_BR[7:0]},   {8'h01, flat_TL[7:0]},   {8'h01, flat_TR[7:0]} };
+            4'd6:  dynamic_command = { {8'h02, flat_BL[15:8]},  {8'h02, flat_BR[15:8]},  {8'h02, flat_TL[15:8]},  {8'h02, flat_TR[15:8]} };
+            4'd7:  dynamic_command = { {8'h03, flat_BL[23:16]}, {8'h03, flat_BR[23:16]}, {8'h03, flat_TL[23:16]}, {8'h03, flat_TR[23:16]} };
+            4'd8:  dynamic_command = { {8'h04, flat_BL[31:24]}, {8'h04, flat_BR[31:24]}, {8'h04, flat_TL[31:24]}, {8'h04, flat_TR[31:24]} };
+            4'd9:  dynamic_command = { {8'h05, flat_BL[39:32]}, {8'h05, flat_BR[39:32]}, {8'h05, flat_TL[39:32]}, {8'h05, flat_TR[39:32]} };
+            4'd10: dynamic_command = { {8'h06, flat_BL[47:40]}, {8'h06, flat_BR[47:40]}, {8'h06, flat_TL[47:40]}, {8'h06, flat_TR[47:40]} };
+            4'd11: dynamic_command = { {8'h07, flat_BL[55:48]}, {8'h07, flat_BR[55:48]}, {8'h07, flat_TL[55:48]}, {8'h07, flat_TR[55:48]} };
+            4'd12: dynamic_command = { {8'h08, flat_BL[63:56]}, {8'h08, flat_BR[63:56]}, {8'h08, flat_TL[63:56]}, {8'h08, flat_TR[63:56]} };
             default: dynamic_command = 64'b0;
         endcase
     end
