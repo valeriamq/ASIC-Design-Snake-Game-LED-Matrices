@@ -1,28 +1,27 @@
 module spi_driver(
     input slow_clk,
-    input reset_n, // <-- NUEVA ENTRADA DE RESET
+    input reset_n, 
     input [63:0] dynamic_command,
-    output reg [3:0] cmd_index = 0,
+    output reg [3:0] cmd_index,
     output MAX_DIN,
     output MAX_CLK,
     output MAX_CS
 );
 
-    reg din_reg = 0;
-    reg clk_reg = 0;
-    reg cs_reg  = 1;
+    reg din_reg;
+    reg clk_reg;
+    reg cs_reg;
 
     assign MAX_DIN = din_reg;
     assign MAX_CLK = clk_reg;
     assign MAX_CS  = cs_reg;
 
-    reg [63:0] shift_reg = 0;
-    reg [6:0] bit_count = 0;
-    reg [2:0] state = 0;
+    reg [63:0] shift_reg;
+    reg [6:0] bit_count;
+    reg [2:0] state;
 
     always @(posedge slow_clk) begin
         if (!reset_n) begin
-            // Estado inicial seguro y limpio en caso de reset
             state     <= 0;
             cmd_index <= 0;
             cs_reg    <= 1;

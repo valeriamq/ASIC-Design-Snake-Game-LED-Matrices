@@ -16,6 +16,8 @@ module tt_um_example (
     input  wire       rst_n
 );
 
+  wire [6:0] hex0_full;
+
   snake_top mi_juego (
       .CLOCK_50(clk),
       .SW(rst_n),
@@ -26,13 +28,15 @@ module tt_um_example (
       .MAX_CLK(uo_out[1]),
       .MAX_CS(uo_out[2]),
       
-      .HEX0(uo_out[7:3]),
+      .HEX0(hex0_full),
       .HEX1(uio_out[6:0])
-  );
+    );
+
+  assign uo_out[7:3] = hex0_full[4:0];
 
   assign uio_oe  = 8'b01111111;
   assign uio_out[7] = 1'b0;
 
-  wire _unused = &{ena, ui_in[7:4], uio_in, 1'b0};
+  wire _unused = &{ena, ui_in[7:4], uio_in, hex0_full[6:5], 1'b0};
 
 endmodule
