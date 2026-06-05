@@ -196,6 +196,15 @@ Poison Obstacles: The dynamic hazard engine was verified to unlock only after th
 
 ## FPGA Implementation Operation
 
+https://github.com/user-attachments/assets/b47eae97-ec65-4708-bf28-ba7017474251
+
+
+
+
+
+
+
+
 
 
 
